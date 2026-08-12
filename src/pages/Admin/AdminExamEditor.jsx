@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getExam, createExam, updateExam } from "../../services/examService";
 import { listQuestions } from "../../services/questionService";
@@ -17,6 +17,25 @@ const emptyExam = {
   published: false,
   questionIds: [],
 };
+
+/** Checkbox that can show a dash (indeterminate) when only some items in a
+ * group are selected — React doesn't expose `indeterminate` as a prop, so
+ * it has to be set imperatively via a ref. */
+function TriStateCheckbox({ checked, indeterminate, onChange, className = "" }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      className={`h-4 w-4 accent-blossom-500 ${className}`}
+      checked={checked}
+      onChange={onChange}
+    />
+  );
+}
 
 export default function AdminExamEditor() {
   const { id } = useParams();
