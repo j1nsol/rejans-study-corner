@@ -1,0 +1,70 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────
+// IMPORTANT — READ THIS BEFORE DEPLOYING
+//
+// This app deliberately has NO Firebase Authentication. The Creator Mode
+// PIN lives only in client-side JavaScript (a Vite env var baked into the
+// bundle at build time). That means:
+//
+//   • Firestore Security Rules CANNOT tell a "creator" apart from a
+//     "student" — there is no signed-in user, no token, nothing to check.
+//   • Anyone who finds your deployed URL and opens devtools can, in
+//     principle, read the bundle, find VITE_ADMIN_PIN, and call Firestore
+//     directly — the PIN is a UI speed bump, not a security boundary.
+//
+// The rules below therefore allow open read/write to the collections this
+// app needs, with basic shape/type validation to reduce accidental garbage
+// data. This is an intentional, documented trade-off for a small private
+// project used by two people. Do NOT reuse this rules file for an app with
+// real user accounts or sensitive data without adding real Authentication
+// and rewriting these rules around request.auth.
+//
+// If you want a bit more protection without adding full accounts, look at
+// Firebase App Check — it can help ensure requests come from your actual
+// app rather than a random script, though it still isn't per-user auth.
+// ─────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /exams/{examId} {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasAll(['title', 'durationMinutes', 'passingPercentage', 'published'])
+        && request.resource.data.title is string
+        && request.resource.data.durationMinutes is number
+        && request.resource.data.passingPercentage is number
+        && request.resource.data.published is bool;
+    }
+
+    match /questions/{questionId} {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasAll(['question', 'type', 'correctAnswer', 'points'])
+        && request.resource.data.question is string
+        && request.resource.data.type in ['multiple_choice', 'true_false', 'short_answer']
+        && request.resource.data.points is number;
+    }
+
+    match /attempts/{attemptId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['username', 'examId', 'status'])
+        && request.resource.data.username is string
+        && request.resource.data.status == 'in_progress';
+      // Allow updates (submission/grading) — we cannot restrict this to
+      // "only the score-calculation code" without server-side auth, so we
+      // rely on the app to always recompute scores from Firestore data
+      // rather than trusting whatever a client sends.
+      allow update: if true;
+      allow delete: if true;
+
+      match /answers/{questionId} {
+        allow read, write: if true;
+      }
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}
