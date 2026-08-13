@@ -101,6 +101,19 @@ export async function deleteQuestion(id) {
   await deleteDoc(doc(db, "questions", id));
 }
 
+/** Deletes many questions in one batched write — used by the question
+ * bank's multi-select delete so removing dozens of questions doesn't mean
+ * dozens of round trips. Firestore batches cap at 500 writes, so this
+ * chunks larger selections automatically. */
+export async function bulkDeleteQuestions(ids) {
+  for (let i = 0; i < ids.length; i += 450) {
+    const chunk = ids.slice(i, i + 450);
+    const batch = writeBatch(db);
+    chunk.forEach((id) => batch.delete(doc(db, "questions", id)));
+    await batch.commit();
+  }
+}
+
 export async function duplicateQuestion(id) {
   const original = await getQuestion(id);
   if (!original) throw new Error("Question not found");

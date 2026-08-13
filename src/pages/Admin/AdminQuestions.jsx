@@ -6,6 +6,7 @@ import {
   updateQuestion,
   deleteQuestion,
   duplicateQuestion,
+  bulkDeleteQuestions,
 } from "../../services/questionService";
 import { QUESTION_TYPES } from "../../utils/grading";
 import Card from "../../components/ui/Card";
@@ -271,6 +272,8 @@ export default function AdminQuestions() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [toast, setToast] = useState("");
 
   async function refresh() {
@@ -302,6 +305,11 @@ export default function AdminQuestions() {
   async function handleDelete(q) {
     if (!confirm("Delete this question from the bank?")) return;
     await deleteQuestion(q.id);
+    setSelected((s) => {
+      const next = new Set(s);
+      next.delete(q.id);
+      return next;
+    });
     await refresh();
     setToast("Deleted 🗑️");
   }
@@ -310,6 +318,44 @@ export default function AdminQuestions() {
     await duplicateQuestion(q.id);
     await refresh();
     setToast("Duplicated ✨");
+  }
+
+  function toggleSelected(id) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllVisible() {
+    const visibleIds = visible.map((q) => q.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+    setSelected((s) => {
+      const next = new Set(s);
+      visibleIds.forEach((id) => (allSelected ? next.delete(id) : next.add(id)));
+      return next;
+    });
+  }
+
+  async function handleBulkDelete() {
+    const count = selected.size;
+    if (count === 0) return;
+    if (!confirm(`Delete ${count} question${count === 1 ? "" : "s"} from the bank? This can't be undone.`)) {
+      return;
+    }
+    setBulkDeleting(true);
+    try {
+      await bulkDeleteQuestions([...selected]);
+      setSelected(new Set());
+      await refresh();
+      setToast(`Deleted ${count} question${count === 1 ? "" : "s"} 🗑️`);
+    } catch (err) {
+      setToast("Oops, something went wrong deleting those. 🥺");
+    } finally {
+      setBulkDeleting(false);
+    }
   }
 
   return (
@@ -364,14 +410,59 @@ export default function AdminQuestions() {
         <EmptyState emoji="📝" title="No questions yet" subtitle="Add one, or import a CSV of questions." />
       )}
 
-      <div className="space-y-2">
+      {visible.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
+          <label className="flex cursor-pointer items-center gap-2 font-semibold text-stone-500">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-blossom-500"
+              checked={visible.length > 0 && visible.every((q) => selected.has(q.id))}
+              onChange={toggleSelectAllVisible}
+            />
+            Select all {visible.length} shown
+          </label>
+          {selected.size > 0 && (
+            <>
+              <span className="text-stone-300">·</span>
+              <span className="text-stone-400">{selected.size} selected</span>
+              <Button
+                type="button"
+                variant="danger"
+                className="!px-3 !py-1 text-xs"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+              >
+                {bulkDeleting ? "Deleting..." : `Delete Selected (${selected.size})`}
+              </Button>
+              <button
+                type="button"
+                className="focus-cute text-stone-400 underline"
+                onClick={() => setSelected(new Set())}
+              >
+                Clear selection
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="max-h-[65vh] space-y-2 overflow-y-auto rounded-cute border border-stone-100 bg-white/40 p-2">
         {visible.map((q) => (
           <Card key={q.id} className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-stone-700">{q.question}</p>
-              <p className="text-xs text-stone-400">
-                {q.type.replace("_", " ")} · {q.points} pt{q.points === 1 ? "" : "s"} · {q.category}
-              </p>
+            <div className="flex min-w-0 items-center gap-3">
+              <input
+                type="checkbox"
+                className="h-4 w-4 shrink-0 accent-blossom-500"
+                checked={selected.has(q.id)}
+                onChange={() => toggleSelected(q.id)}
+                aria-label={`Select "${q.question}"`}
+              />
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-stone-700">{q.question}</p>
+                <p className="text-xs text-stone-400">
+                  {q.type.replace("_", " ")} · {q.points} pt{q.points === 1 ? "" : "s"} · {q.category}
+                </p>
+              </div>
             </div>
             <div className="flex shrink-0 gap-2">
               <Button variant="secondary" onClick={() => setEditing(q)}>Edit</Button>
@@ -380,6 +471,9 @@ export default function AdminQuestions() {
             </div>
           </Card>
         ))}
+        {visible.length === 0 && (
+          <p className="py-6 text-center text-sm text-stone-400">No matching questions.</p>
+        )}
       </div>
 
       <Toast message={toast} onClose={() => setToast("")} />

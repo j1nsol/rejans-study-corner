@@ -13,6 +13,15 @@ body {
     radial-gradient(circle at 90% 20%, rgba(220, 205, 255, 0.35), transparent 45%),
     radial-gradient(circle at 50% 90%, rgba(255, 233, 217, 0.4), transparent 50%),
     #fffdf7;
+  /* Pinning the background to the viewport (instead of the full,
+     content-length-dependent scroll height) keeps the gradient blobs at a
+     fixed size/position no matter how tall a page gets — otherwise their
+     percentage-based positions stretch across a longer page and the
+     "transparent 40%" stop can end partway down, showing a hard seam
+     where the flat base color abruptly takes over. Degrades gracefully to
+     normal scrolling background on browsers that ignore `fixed` (notably
+     iOS Safari on body) — it just won't get the pinned effect there. */
+  background-attachment: fixed;
   min-height: 100vh;
 }
 
