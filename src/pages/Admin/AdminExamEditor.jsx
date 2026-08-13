@@ -15,6 +15,7 @@ const emptyExam = {
   durationMinutes: 30,
   passingPercentage: 75,
   published: false,
+  shuffleQuestions: false,
   questionIds: [],
 };
 
@@ -107,6 +108,32 @@ export default function AdminExamEditor() {
       return { ...f, questionIds: ids };
     });
   }
+  function ToggleSwitch({ checked, onChange, label, id }) {
+  return (
+    <label
+      htmlFor={id}
+      className="flex cursor-pointer items-center justify-between gap-3 text-sm font-semibold text-stone-600"
+    >
+      <span>{label}</span>
+      <button
+        id={id}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`focus-cute relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${
+          checked ? "bg-blossom-500" : "bg-stone-200"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+            checked ? "translate-x-5" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </label>
+  );
+}
 
   async function handleSave(publishOverride) {
     if (!form.title.trim()) {
@@ -128,6 +155,8 @@ export default function AdminExamEditor() {
       setToast("Saved ✨");
     }
   }
+
+  
 
   if (allQuestions === null) return <Spinner />;
 
@@ -200,6 +229,13 @@ export default function AdminExamEditor() {
             />
             Published
           </label>
+
+          <ToggleSwitch
+            id="shuffle-questions"
+            label="Shuffle Questions"
+            checked={form.shuffleQuestions}
+            onChange={(val) => update("shuffleQuestions", val)}
+          />
 
           <div className="flex flex-wrap gap-2 pt-2">
             <Button onClick={() => handleSave()} disabled={saving}>

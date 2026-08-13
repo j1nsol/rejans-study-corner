@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { listExams } from "../../services/examService";
+import { listExams, getExam } from "../../services/examService";
 import { getStudyBuddySettings } from "../../services/studyBuddyService";
 import { listAllAttempts } from "../../services/attemptService";
 import ExamCard from "../../components/ExamCard/ExamCard";
@@ -8,11 +8,29 @@ import StudyBuddy from "../../components/StudyBuddy/StudyBuddy";
 import Spinner from "../../components/ui/Spinner";
 import EmptyState from "../../components/ui/EmptyState";
 import Card from "../../components/ui/Card";
+import Button from "../../components/ui/Button";
+
+function formatRemaining(expiresAt) {
+  const ms = expiresAt?.toMillis
+    ? expiresAt.toMillis()
+    : expiresAt?.seconds
+    ? expiresAt.seconds * 1000
+    : null;
+  if (ms === null) return null;
+  const remainingMs = ms - Date.now();
+  if (remainingMs <= 0) return null;
+  const totalMinutes = Math.ceil(remainingMs / 60000);
+  if (totalMinutes < 60) return `${totalMinutes} min left`;
+  const hours = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  return `${hours}h ${mins}m left`;
+}
 
 export default function Home() {
   const [exams, setExams] = useState(null);
   const [buddy, setBuddy] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [resumable, setResumable] = useState(null);
   const username = sessionStorage.getItem("rejan-username");
 
   useEffect(() => {
@@ -28,9 +46,10 @@ export default function Home() {
 
       if (username) {
         try {
-          const attempts = (await listAllAttempts()).filter(
-            (a) => a.username === username && a.status === "submitted"
-          );
+          const allAttempts = await listAllAttempts();
+          const mine = allAttempts.filter((a) => a.username === username);
+
+          const attempts = mine.filter((a) => a.status === "submitted");
           const completed = attempts.length;
           const avg = completed
             ? Math.round(
@@ -38,6 +57,18 @@ export default function Home() {
               )
             : 0;
           setProgress({ completed, avg, recent: attempts.slice(0, 3) });
+
+          // mine is already ordered by startedAt desc (from listAllAttempts),
+          // so the first in-progress attempt found is the most recent one.
+          const inProgress = mine.find((a) => a.status === "in_progress");
+          if (inProgress) {
+            const exam =
+              examList.find((e) => e.id === inProgress.examId) ??
+              (await getExam(inProgress.examId));
+            if (mounted && exam) {
+              setResumable({ attempt: inProgress, exam });
+            }
+          }
         } catch {
           setProgress(null);
         }
@@ -67,6 +98,28 @@ export default function Home() {
           size="lg"
         />
       </div>
+
+      {resumable && (
+        <Card tape className="mb-8 flex flex-col items-center gap-3 text-center sm:flex-row sm:justify-between sm:text-left">
+          <div>
+            <p className="font-display text-lg text-stone-700">
+              📌 Continue where you left off
+            </p>
+            <p className="text-sm text-stone-500">
+              You're partway through <span className="font-semibold">{resumable.exam.title}</span>
+              {formatRemaining(resumable.attempt.expiresAt)
+                ? ` — ${formatRemaining(resumable.attempt.expiresAt)}`
+                : " — time's almost up!"}
+            </p>
+          </div>
+          <Link
+            to={`/exams/${resumable.attempt.examId}/take?attempt=${resumable.attempt.id}`}
+            className="shrink-0"
+          >
+            <Button variant="mint">Continue Studying ✨</Button>
+          </Link>
+        </Card>
+      )}
 
       {progress && progress.completed > 0 && (
         <Card className="mb-8">

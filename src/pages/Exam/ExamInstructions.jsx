@@ -56,6 +56,8 @@ export default function ExamInstructions() {
         examId: exam.id,
         username: username.trim(),
         durationMinutes: exam.durationMinutes,
+        questionIds: exam.questionIds,
+        shuffleQuestions: exam.shuffleQuestions,
       });
       navigate(`/exams/${exam.id}/take?attempt=${attemptId}`);
     } catch (e) {

@@ -15,6 +15,7 @@ import {
 import { db } from "../firebase/config";
 import { getQuestionsByIds } from "./questionService";
 import { gradeAttempt } from "../utils/grading";
+import { shuffleArray } from "../utils/shuffle";
 
 const attemptsCol = collection(db, "attempts");
 
@@ -32,10 +33,25 @@ function answersCol(attemptId) {
  * Firestore — so a page refresh (or closing the tab and coming back)
  * can never grant extra time. We always recompute "time remaining" from
  * expiresAt, never from a running JS timer alone.
+ *
+ * If the exam has shuffleQuestions on, we shuffle the question order once
+ * here and store it as questionOrder on the attempt — so the order is
+ * randomized fresh on every new attempt (every retake), but stays fixed
+ * for the lifetime of *this* attempt (a refresh or resumed session won't
+ * reshuffle mid-exam).
  */
-export async function startAttempt({ examId, username, durationMinutes }) {
+export async function startAttempt({
+  examId,
+  username,
+  durationMinutes,
+  questionIds,
+  shuffleQuestions,
+}) {
   const now = Date.now();
   const expiresAt = Timestamp.fromMillis(now + durationMinutes * 60 * 1000);
+  const questionOrder = shuffleQuestions
+    ? shuffleArray(questionIds ?? [])
+    : questionIds ?? [];
 
   const ref = doc(attemptsCol);
   await setDoc(ref, {
@@ -49,6 +65,7 @@ export async function startAttempt({ examId, username, durationMinutes }) {
     totalPoints: null,
     percentage: null,
     passed: null,
+    questionOrder,
   });
   return ref.id;
 }
@@ -77,6 +94,30 @@ export async function getAnswersMap(attemptId) {
 }
 
 /**
+ * Like getAnswersMap, but returns the full answer doc (value + flagged)
+ * per question instead of just the value. Used by the exam-taking screen
+ * so "flag for review" state survives a refresh or a resumed attempt.
+ * Grading (submitAttempt) intentionally keeps using the plain getAnswersMap
+ * above, since flags never affect scoring.
+ */
+export async function getAnswersFull(attemptId) {
+  const snap = await getDocs(answersCol(attemptId));
+  const map = {};
+  snap.forEach((d) => {
+    map[d.id] = d.data();
+  });
+  return map;
+}
+
+export async function setAnswerFlag(attemptId, questionId, flagged) {
+  await setDoc(
+    doc(answersCol(attemptId), questionId),
+    { flagged, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+/**
  * Submits + grades an attempt. Uses a transaction as a lightweight guard
  * against duplicate submissions (e.g. double-click, or the auto-submit
  * timer firing right as the student clicks Submit). Grading always uses
@@ -93,7 +134,8 @@ export async function submitAttempt(attemptId) {
   const exam = await (await import("./examService")).getExam(attempt.examId);
   if (!exam) throw new Error("Exam not found");
 
-  const questions = await getQuestionsByIds(exam.questionIds);
+  const orderedIds = attempt.questionOrder ?? exam.questionIds;
+  const questions = await getQuestionsByIds(orderedIds);
   const answers = await getAnswersMap(attemptId);
   const result = gradeAttempt(questions, answers, exam.passingPercentage);
 

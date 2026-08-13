@@ -41,6 +41,7 @@ export async function createExam(data) {
     durationMinutes: Number(data.durationMinutes) || 30,
     passingPercentage: Number(data.passingPercentage) || 70,
     published: Boolean(data.published) || false,
+    shuffleQuestions: Boolean(data.shuffleQuestions) || false,
     questionIds: data.questionIds ?? [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

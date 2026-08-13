@@ -1,0 +1,424 @@
+diff --git a/README.md b/README.md
+index 633f100..3b86a50 100644
+--- a/README.md
++++ b/README.md
+@@ -132,7 +132,7 @@ attempts/{attemptId}
+   { username, examId, startedAt, expiresAt, submittedAt, status,
+     score, totalPoints, percentage, passed }
+   attempts/{attemptId}/answers/{questionId}
+-    { value, updatedAt }
++    { value, flagged, updatedAt }
+ 
+ settings/studyBuddy
+   { images: { default, studying, happy, celebration, sleepy,
+diff --git a/src/components/QuestionCard/QuestionCard.jsx b/src/components/QuestionCard/QuestionCard.jsx
+index 96e42af..aca64e3 100644
+--- a/src/components/QuestionCard/QuestionCard.jsx
++++ b/src/components/QuestionCard/QuestionCard.jsx
+@@ -1,9 +1,35 @@
+-export default function QuestionCard({ question, index, total, value, onChange }) {
++export default function QuestionCard({
++  question,
++  index,
++  total,
++  value,
++  onChange,
++  flagged = false,
++  onToggleFlag,
++}) {
+   return (
+     <div>
+-      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-lavender-400">
+-        Question {index + 1} of {total}
+-      </p>
++      <div className="mb-1 flex items-center justify-between gap-3">
++        <p className="text-xs font-semibold uppercase tracking-wide text-lavender-400">
++          Question {index + 1} of {total}
++        </p>
++        {onToggleFlag && (
++          <button
++            type="button"
++            onClick={onToggleFlag}
++            aria-pressed={flagged}
++            title={flagged ? "Unflag this question" : "Flag this question for review"}
++            className={`focus-cute flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition ${
++              flagged
++                ? "bg-amber-100 text-amber-600"
++                : "bg-stone-100 text-stone-400 hover:bg-stone-200 hover:text-stone-500"
++            }`}
++          >
++            <span aria-hidden="true">🚩</span>
++            {flagged ? "Flagged" : "Flag"}
++          </button>
++        )}
++      </div>
+       <h2 className="mb-5 whitespace-pre-line font-body text-lg font-bold leading-relaxed text-stone-700">
+         {question.question}
+       </h2>
+diff --git a/src/components/QuestionNavigation/QuestionNavigation.jsx b/src/components/QuestionNavigation/QuestionNavigation.jsx
+index 400a311..8f31447 100644
+--- a/src/components/QuestionNavigation/QuestionNavigation.jsx
++++ b/src/components/QuestionNavigation/QuestionNavigation.jsx
+@@ -1,29 +1,70 @@
+-export default function QuestionNavigation({ total, currentIndex, answeredSet, onJump }) {
++export default function QuestionNavigation({
++  total,
++  currentIndex,
++  answeredSet,
++  flaggedSet = new Set(),
++  onJump,
++}) {
++  const flaggedIndices = Array.from({ length: total })
++    .map((_, i) => i)
++    .filter((i) => flaggedSet.has(i));
++
+   return (
+-    <div className="flex flex-wrap justify-center gap-2" role="tablist" aria-label="Question navigation">
+-      {Array.from({ length: total }).map((_, i) => {
+-        const isAnswered = answeredSet.has(i);
+-        const isCurrent = i === currentIndex;
+-        return (
+-          <button
+-            key={i}
+-            type="button"
+-            role="tab"
+-            aria-selected={isCurrent}
+-            aria-label={`Question ${i + 1}${isAnswered ? ", answered" : ", unanswered"}`}
+-            onClick={() => onJump(i)}
+-            className={`focus-cute flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition ${
+-              isCurrent
+-                ? "bg-blossom-400 text-white shadow-soft"
+-                : isAnswered
+-                ? "bg-mint-300 text-emerald-800"
+-                : "bg-stone-100 text-stone-400 hover:bg-stone-200"
+-            }`}
+-          >
+-            {i + 1}
+-          </button>
+-        );
+-      })}
++    <div>
++      <div className="flex flex-wrap justify-center gap-2" role="tablist" aria-label="Question navigation">
++        {Array.from({ length: total }).map((_, i) => {
++          const isAnswered = answeredSet.has(i);
++          const isFlagged = flaggedSet.has(i);
++          const isCurrent = i === currentIndex;
++          return (
++            <button
++              key={i}
++              type="button"
++              role="tab"
++              aria-selected={isCurrent}
++              aria-label={`Question ${i + 1}${isAnswered ? ", answered" : ", unanswered"}${
++                isFlagged ? ", flagged for review" : ""
++              }`}
++              onClick={() => onJump(i)}
++              className={`focus-cute relative flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition ${
++                isCurrent
++                  ? "bg-blossom-400 text-white shadow-soft"
++                  : isAnswered
++                  ? "bg-mint-300 text-emerald-800"
++                  : "bg-stone-100 text-stone-400 hover:bg-stone-200"
++              }`}
++            >
++              {i + 1}
++              {isFlagged && (
++                <span
++                  aria-hidden="true"
++                  className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] leading-none shadow-soft"
++                >
++                  🚩
++                </span>
++              )}
++            </button>
++          );
++        })}
++      </div>
++
++      {flaggedIndices.length > 0 && (
++        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-amber-50 px-3 py-2">
++          <span className="text-xs font-semibold text-amber-600">
++            🚩 Flagged for review ({flaggedIndices.length}):
++          </span>
++          {flaggedIndices.map((i) => (
++            <button
++              key={i}
++              type="button"
++              onClick={() => onJump(i)}
++              className="focus-cute rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-amber-600 shadow-soft transition hover:-translate-y-0.5 hover:bg-amber-100"
++            >
++              Q{i + 1}
++            </button>
++          ))}
++        </div>
++      )}
+     </div>
+   );
+ }
+diff --git a/src/pages/Exam/ExamTake.jsx b/src/pages/Exam/ExamTake.jsx
+index 164ed53..d39bb58 100644
+--- a/src/pages/Exam/ExamTake.jsx
++++ b/src/pages/Exam/ExamTake.jsx
+@@ -4,8 +4,9 @@ import { getExam } from "../../services/examService";
+ import { getQuestionsByIds } from "../../services/questionService";
+ import {
+   getAttempt,
+-  getAnswersMap,
++  getAnswersFull,
+   saveAnswer,
++  setAnswerFlag,
+   submitAttempt,
+ } from "../../services/attemptService";
+ import { useCountdown } from "../../hooks/useCountdown";
+@@ -26,6 +27,7 @@ export default function ExamTake() {
+   const [questions, setQuestions] = useState(null);
+   const [attempt, setAttempt] = useState(null);
+   const [answers, setAnswers] = useState({});
++  const [flagged, setFlagged] = useState(new Set());
+   const [index, setIndex] = useState(0);
+   const [confirmOpen, setConfirmOpen] = useState(false);
+   const [submitting, setSubmitting] = useState(false);
+@@ -51,12 +53,19 @@ export default function ExamTake() {
+         }
+         const e = await getExam(id);
+         const qs = await getQuestionsByIds(e.questionIds);
+-        const existingAnswers = await getAnswersMap(attemptId);
++        const existingAnswers = await getAnswersFull(attemptId);
+         if (!mounted) return;
++        const values = {};
++        const flaggedIds = new Set();
++        for (const [qid, data] of Object.entries(existingAnswers)) {
++          values[qid] = data.value;
++          if (data.flagged) flaggedIds.add(qid);
++        }
+         setExam(e);
+         setQuestions(qs);
+         setAttempt(a);
+-        setAnswers(existingAnswers);
++        setAnswers(values);
++        setFlagged(flaggedIds);
+       } catch (err) {
+         setLoadError("Oops! Something went wrong loading your exam. 🥺");
+       }
+@@ -85,6 +94,16 @@ export default function ExamTake() {
+     [answers, questions]
+   );
+ 
++  const flaggedSet = useMemo(
++    () =>
++      new Set(
++        Array.from(flagged)
++          .map((qid) => questions?.findIndex((q) => q.id === qid))
++          .filter((i) => i >= 0)
++      ),
++    [flagged, questions]
++  );
++
+   function handleAnswerChange(questionId, value) {
+     setAnswers((prev) => ({ ...prev, [questionId]: value }));
+     saveAnswer(attemptId, questionId, value).catch(() => {
+@@ -92,6 +111,19 @@ export default function ExamTake() {
+     });
+   }
+ 
++  function handleToggleFlag(questionId) {
++    setFlagged((prev) => {
++      const next = new Set(prev);
++      const isFlagged = next.has(questionId);
++      if (isFlagged) next.delete(questionId);
++      else next.add(questionId);
++      setAnswerFlag(attemptId, questionId, !isFlagged).catch(() => {
++        /* best-effort; local state already updated */
++      });
++      return next;
++    });
++  }
++
+   async function handleSubmit(auto = false) {
+     if (submittedRef.current) return;
+     submittedRef.current = true;
+@@ -153,6 +185,8 @@ export default function ExamTake() {
+           total={questions.length}
+           value={answers[question.id]}
+           onChange={(val) => handleAnswerChange(question.id, val)}
++          flagged={flagged.has(question.id)}
++          onToggleFlag={() => handleToggleFlag(question.id)}
+         />
+       </Card>
+ 
+@@ -179,6 +213,7 @@ export default function ExamTake() {
+         total={questions.length}
+         currentIndex={index}
+         answeredSet={answeredSet}
++        flaggedSet={flaggedSet}
+         onJump={setIndex}
+       />
+ 
+@@ -201,10 +236,27 @@ export default function ExamTake() {
+             <p className="mb-5 text-sm text-stone-500">
+               You won't be able to change your answers after submitting.
+             </p>
+-            <div className="flex justify-center gap-3">
++            {flaggedSet.size > 0 && (
++              <p className="mb-5 rounded-2xl bg-amber-50 px-4 py-2 text-sm text-amber-600">
++                🚩 You still have {flaggedSet.size} question{flaggedSet.size > 1 ? "s" : ""} flagged
++                for review.
++              </p>
++            )}
++            <div className="flex flex-wrap justify-center gap-3">
+               <Button variant="ghost" onClick={() => setConfirmOpen(false)}>
+                 Go Back
+               </Button>
++              {flaggedSet.size > 0 && (
++                <Button
++                  variant="secondary"
++                  onClick={() => {
++                    setConfirmOpen(false);
++                    setIndex(Math.min(...flaggedSet));
++                  }}
++                >
++                  Review Flagged
++                </Button>
++              )}
+               <Button variant="mint" onClick={() => handleSubmit(false)} disabled={submitting}>
+                 {submitting ? "Submitting..." : "I'm Done! ✨"}
+               </Button>
+diff --git a/src/pages/Home/Home.jsx b/src/pages/Home/Home.jsx
+index b1e991a..54d4710 100644
+--- a/src/pages/Home/Home.jsx
++++ b/src/pages/Home/Home.jsx
+@@ -1,6 +1,6 @@
+ import { useEffect, useState } from "react";
+ import { Link } from "react-router-dom";
+-import { listExams } from "../../services/examService";
++import { listExams, getExam } from "../../services/examService";
+ import { getStudyBuddySettings } from "../../services/studyBuddyService";
+ import { listAllAttempts } from "../../services/attemptService";
+ import ExamCard from "../../components/ExamCard/ExamCard";
+@@ -8,11 +8,29 @@ import StudyBuddy from "../../components/StudyBuddy/StudyBuddy";
+ import Spinner from "../../components/ui/Spinner";
+ import EmptyState from "../../components/ui/EmptyState";
+ import Card from "../../components/ui/Card";
++import Button from "../../components/ui/Button";
++
++function formatRemaining(expiresAt) {
++  const ms = expiresAt?.toMillis
++    ? expiresAt.toMillis()
++    : expiresAt?.seconds
++    ? expiresAt.seconds * 1000
++    : null;
++  if (ms === null) return null;
++  const remainingMs = ms - Date.now();
++  if (remainingMs <= 0) return null;
++  const totalMinutes = Math.ceil(remainingMs / 60000);
++  if (totalMinutes < 60) return `${totalMinutes} min left`;
++  const hours = Math.floor(totalMinutes / 60);
++  const mins = totalMinutes % 60;
++  return `${hours}h ${mins}m left`;
++}
+ 
+ export default function Home() {
+   const [exams, setExams] = useState(null);
+   const [buddy, setBuddy] = useState(null);
+   const [progress, setProgress] = useState(null);
++  const [resumable, setResumable] = useState(null);
+   const username = sessionStorage.getItem("rejan-username");
+ 
+   useEffect(() => {
+@@ -28,9 +46,10 @@ export default function Home() {
+ 
+       if (username) {
+         try {
+-          const attempts = (await listAllAttempts()).filter(
+-            (a) => a.username === username && a.status === "submitted"
+-          );
++          const allAttempts = await listAllAttempts();
++          const mine = allAttempts.filter((a) => a.username === username);
++
++          const attempts = mine.filter((a) => a.status === "submitted");
+           const completed = attempts.length;
+           const avg = completed
+             ? Math.round(
+@@ -38,6 +57,18 @@ export default function Home() {
+               )
+             : 0;
+           setProgress({ completed, avg, recent: attempts.slice(0, 3) });
++
++          // mine is already ordered by startedAt desc (from listAllAttempts),
++          // so the first in-progress attempt found is the most recent one.
++          const inProgress = mine.find((a) => a.status === "in_progress");
++          if (inProgress) {
++            const exam =
++              examList.find((e) => e.id === inProgress.examId) ??
++              (await getExam(inProgress.examId));
++            if (mounted && exam) {
++              setResumable({ attempt: inProgress, exam });
++            }
++          }
+         } catch {
+           setProgress(null);
+         }
+@@ -68,6 +99,28 @@ export default function Home() {
+         />
+       </div>
+ 
++      {resumable && (
++        <Card tape className="mb-8 flex flex-col items-center gap-3 text-center sm:flex-row sm:justify-between sm:text-left">
++          <div>
++            <p className="font-display text-lg text-stone-700">
++              📌 Continue where you left off
++            </p>
++            <p className="text-sm text-stone-500">
++              You're partway through <span className="font-semibold">{resumable.exam.title}</span>
++              {formatRemaining(resumable.attempt.expiresAt)
++                ? ` — ${formatRemaining(resumable.attempt.expiresAt)}`
++                : " — time's almost up!"}
++            </p>
++          </div>
++          <Link
++            to={`/exams/${resumable.attempt.examId}/take?attempt=${resumable.attempt.id}`}
++            className="shrink-0"
++          >
++            <Button variant="mint">Continue Studying ✨</Button>
++          </Link>
++        </Card>
++      )}
++
+       {progress && progress.completed > 0 && (
+         <Card className="mb-8">
+           <h2 className="mb-3 font-display text-lg text-stone-600">🌱 Your Progress</h2>
+diff --git a/src/services/attemptService.js b/src/services/attemptService.js
+index 2273a39..c2d9b95 100644
+--- a/src/services/attemptService.js
++++ b/src/services/attemptService.js
+@@ -76,6 +76,30 @@ export async function getAnswersMap(attemptId) {
+   return map;
+ }
+ 
++/**
++ * Like getAnswersMap, but returns the full answer doc (value + flagged)
++ * per question instead of just the value. Used by the exam-taking screen
++ * so "flag for review" state survives a refresh or a resumed attempt.
++ * Grading (submitAttempt) intentionally keeps using the plain getAnswersMap
++ * above, since flags never affect scoring.
++ */
++export async function getAnswersFull(attemptId) {
++  const snap = await getDocs(answersCol(attemptId));
++  const map = {};
++  snap.forEach((d) => {
++    map[d.id] = d.data();
++  });
++  return map;
++}
++
++export async function setAnswerFlag(attemptId, questionId, flagged) {
++  await setDoc(
++    doc(answersCol(attemptId), questionId),
++    { flagged, updatedAt: serverTimestamp() },
++    { merge: true }
++  );
++}
++
+ /**
+  * Submits + grades an attempt. Uses a transaction as a lightweight guard
+  * against duplicate submissions (e.g. double-click, or the auto-submit

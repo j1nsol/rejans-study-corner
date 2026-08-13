@@ -8,7 +8,8 @@ export async function getAttemptDetail(attemptId) {
   const attempt = await getAttempt(attemptId);
   if (!attempt) return null;
   const exam = await getExam(attempt.examId);
-  const questions = exam ? await getQuestionsByIds(exam.questionIds) : [];
+  const orderedIds = attempt.questionOrder ?? exam?.questionIds;
+  const questions = exam ? await getQuestionsByIds(orderedIds) : [];
   const answers = await getAnswersMap(attemptId);
 
   const rows = questions.map((q) => {

@@ -1,9 +1,35 @@
-export default function QuestionCard({ question, index, total, value, onChange }) {
+export default function QuestionCard({
+  question,
+  index,
+  total,
+  value,
+  onChange,
+  flagged = false,
+  onToggleFlag,
+}) {
   return (
     <div>
-      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-lavender-400">
-        Question {index + 1} of {total}
-      </p>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-lavender-400">
+          Question {index + 1} of {total}
+        </p>
+        {onToggleFlag && (
+          <button
+            type="button"
+            onClick={onToggleFlag}
+            aria-pressed={flagged}
+            title={flagged ? "Unflag this question" : "Flag this question for review"}
+            className={`focus-cute flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition ${
+              flagged
+                ? "bg-amber-100 text-amber-600"
+                : "bg-stone-100 text-stone-400 hover:bg-stone-200 hover:text-stone-500"
+            }`}
+          >
+            <span aria-hidden="true">🚩</span>
+            {flagged ? "Flagged" : "Flag"}
+          </button>
+        )}
+      </div>
       <h2 className="mb-5 whitespace-pre-line font-body text-lg font-bold leading-relaxed text-stone-700">
         {question.question}
       </h2>

@@ -4,8 +4,9 @@ import { getExam } from "../../services/examService";
 import { getQuestionsByIds } from "../../services/questionService";
 import {
   getAttempt,
-  getAnswersMap,
+  getAnswersFull,
   saveAnswer,
+  setAnswerFlag,
   submitAttempt,
 } from "../../services/attemptService";
 import { useCountdown } from "../../hooks/useCountdown";
@@ -26,6 +27,7 @@ export default function ExamTake() {
   const [questions, setQuestions] = useState(null);
   const [attempt, setAttempt] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [flagged, setFlagged] = useState(new Set());
   const [index, setIndex] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -50,13 +52,21 @@ export default function ExamTake() {
           return;
         }
         const e = await getExam(id);
-        const qs = await getQuestionsByIds(e.questionIds);
-        const existingAnswers = await getAnswersMap(attemptId);
+        const orderedIds = a.questionOrder ?? e.questionIds;
+        const qs = await getQuestionsByIds(orderedIds);
+        const existingAnswers = await getAnswersFull(attemptId);
         if (!mounted) return;
+        const values = {};
+        const flaggedIds = new Set();
+        for (const [qid, data] of Object.entries(existingAnswers)) {
+          values[qid] = data.value;
+          if (data.flagged) flaggedIds.add(qid);
+        }
         setExam(e);
         setQuestions(qs);
         setAttempt(a);
-        setAnswers(existingAnswers);
+        setAnswers(values);
+        setFlagged(flaggedIds);
       } catch (err) {
         setLoadError("Oops! Something went wrong loading your exam. 🥺");
       }
@@ -85,10 +95,33 @@ export default function ExamTake() {
     [answers, questions]
   );
 
+  const flaggedSet = useMemo(
+    () =>
+      new Set(
+        Array.from(flagged)
+          .map((qid) => questions?.findIndex((q) => q.id === qid))
+          .filter((i) => i >= 0)
+      ),
+    [flagged, questions]
+  );
+
   function handleAnswerChange(questionId, value) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
     saveAnswer(attemptId, questionId, value).catch(() => {
       /* best-effort autosave; local state already updated */
+    });
+  }
+
+  function handleToggleFlag(questionId) {
+    setFlagged((prev) => {
+      const next = new Set(prev);
+      const isFlagged = next.has(questionId);
+      if (isFlagged) next.delete(questionId);
+      else next.add(questionId);
+      setAnswerFlag(attemptId, questionId, !isFlagged).catch(() => {
+        /* best-effort; local state already updated */
+      });
+      return next;
     });
   }
 
@@ -153,6 +186,8 @@ export default function ExamTake() {
           total={questions.length}
           value={answers[question.id]}
           onChange={(val) => handleAnswerChange(question.id, val)}
+          flagged={flagged.has(question.id)}
+          onToggleFlag={() => handleToggleFlag(question.id)}
         />
       </Card>
 
@@ -179,6 +214,7 @@ export default function ExamTake() {
         total={questions.length}
         currentIndex={index}
         answeredSet={answeredSet}
+        flaggedSet={flaggedSet}
         onJump={setIndex}
       />
 
@@ -201,10 +237,27 @@ export default function ExamTake() {
             <p className="mb-5 text-sm text-stone-500">
               You won't be able to change your answers after submitting.
             </p>
-            <div className="flex justify-center gap-3">
+            {flaggedSet.size > 0 && (
+              <p className="mb-5 rounded-2xl bg-amber-50 px-4 py-2 text-sm text-amber-600">
+                🚩 You still have {flaggedSet.size} question{flaggedSet.size > 1 ? "s" : ""} flagged
+                for review.
+              </p>
+            )}
+            <div className="flex flex-wrap justify-center gap-3">
               <Button variant="ghost" onClick={() => setConfirmOpen(false)}>
                 Go Back
               </Button>
+              {flaggedSet.size > 0 && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setConfirmOpen(false);
+                    setIndex(Math.min(...flaggedSet));
+                  }}
+                >
+                  Review Flagged
+                </Button>
+              )}
               <Button variant="mint" onClick={() => handleSubmit(false)} disabled={submitting}>
                 {submitting ? "Submitting..." : "I'm Done! ✨"}
               </Button>
