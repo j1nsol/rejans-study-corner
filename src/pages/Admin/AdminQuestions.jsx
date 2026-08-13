@@ -17,17 +17,28 @@ import Toast from "../../components/ui/Toast";
 
 const blankQuestion = {
   question: "",
+  keyword: "",
   type: QUESTION_TYPES.MULTIPLE_CHOICE,
   options: ["", "", "", ""],
   correctAnswer: "A",
   points: 1,
   category: "General",
   explanation: "",
+  optionRationales: {},
 };
 
+const LETTERS = ["A", "B", "C", "D"];
+
 function QuestionForm({ initial, onCancel, onSaved }) {
-  const [form, setForm] = useState(initial ?? blankQuestion);
+  const [form, setForm] = useState(() => ({
+    ...blankQuestion,
+    ...initial,
+    optionRationales: initial?.optionRationales ?? {},
+  }));
   const [saving, setSaving] = useState(false);
+  const [showRationale, setShowRationale] = useState(
+    () => Object.values(initial?.optionRationales ?? {}).some((v) => v)
+  );
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -41,19 +52,48 @@ function QuestionForm({ initial, onCancel, onSaved }) {
     });
   }
 
+  function updateRationale(letter, value) {
+    setForm((f) => ({
+      ...f,
+      optionRationales: { ...f.optionRationales, [letter]: value },
+    }));
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
-    const payload = {
+
+    let payload = {
       ...form,
       points: Number(form.points) || 1,
-      options:
-        form.type === QUESTION_TYPES.MULTIPLE_CHOICE
-          ? form.options.filter((o) => o.trim() !== "")
-          : form.type === QUESTION_TYPES.TRUE_FALSE
-          ? ["True", "False"]
-          : [],
     };
+
+    if (form.type === QUESTION_TYPES.MULTIPLE_CHOICE) {
+      // Filter out blank options, but re-letter everything positionally
+      // (options, correctAnswer, and rationale keys together) so a gap
+      // like an empty option B never causes the letter shown to the
+      // student to drift from the letter used for grading/rationale.
+      const filled = LETTERS.map((letter, i) => ({
+        letter,
+        text: form.options[i]?.trim() ?? "",
+      })).filter((o) => o.text !== "");
+
+      const oldToNewLetter = Object.fromEntries(
+        filled.map((o, i) => [o.letter, LETTERS[i]])
+      );
+
+      payload.options = filled.map((o) => o.text);
+      payload.correctAnswer = oldToNewLetter[form.correctAnswer] ?? filled[0]?.letter ?? "A";
+      payload.optionRationales = Object.fromEntries(
+        Object.entries(form.optionRationales)
+          .filter(([letter, text]) => oldToNewLetter[letter] && text?.trim())
+          .map(([letter, text]) => [oldToNewLetter[letter], text.trim()])
+      );
+    } else {
+      payload.options = form.type === QUESTION_TYPES.TRUE_FALSE ? ["True", "False"] : [];
+      payload.optionRationales = {};
+    }
+
     if (form.id) {
       await updateQuestion(form.id, payload);
     } else {
@@ -68,10 +108,19 @@ function QuestionForm({ initial, onCancel, onSaved }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <Textarea
           label="Question text"
-          rows={2}
+          rows={4}
           required
           value={form.question}
           onChange={(e) => update("question", e.target.value)}
+          hint="Press Enter for a new line — line breaks are preserved wherever this question is shown (e.g. numbering I. / II. / III. on their own lines)."
+        />
+
+        <Input
+          label="Keyword / topic (optional)"
+          value={form.keyword}
+          onChange={(e) => update("keyword", e.target.value)}
+          placeholder="e.g. Behaviorism-based inclusive practices"
+          hint="A short label shown in the results review to remind her what the question was testing."
         />
 
         <div className="grid grid-cols-2 gap-4">
@@ -128,6 +177,37 @@ function QuestionForm({ initial, onCancel, onSaved }) {
               </div>
             ))}
             <p className="text-xs text-stone-400">Select the radio next to the correct option.</p>
+
+            <button
+              type="button"
+              className="focus-cute text-xs font-semibold text-lavender-500 underline hover:text-lavender-600"
+              onClick={() => setShowRationale((s) => !s)}
+            >
+              {showRationale ? "Hide" : "Add"} rationale for wrong answers (optional)
+            </button>
+
+            {showRationale && (
+              <div className="space-y-2 rounded-2xl bg-lavender-50 p-3">
+                <p className="text-xs text-stone-500">
+                  Explain why each wrong option is wrong — shown in the results review, like
+                  "B omits explicit/direct instruction, which is also a core behaviorist practice."
+                  The correct option already uses the Explanation field below for its "why."
+                </p>
+                {LETTERS.map((letter, i) => {
+                  const optionText = form.options[i]?.trim();
+                  if (!optionText || form.correctAnswer === letter) return null;
+                  return (
+                    <Textarea
+                      key={letter}
+                      label={`Why ${letter} (“${optionText}”) is wrong`}
+                      rows={2}
+                      value={form.optionRationales?.[letter] ?? ""}
+                      onChange={(e) => updateRationale(letter, e.target.value)}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -165,7 +245,7 @@ function QuestionForm({ initial, onCancel, onSaved }) {
           />
         </div>
         <Textarea
-          label="Explanation (optional)"
+          label="Explanation — why the correct answer is right (optional)"
           rows={2}
           value={form.explanation}
           onChange={(e) => update("explanation", e.target.value)}

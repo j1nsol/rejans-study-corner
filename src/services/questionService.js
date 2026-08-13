@@ -13,6 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase/config";
+import { normalizeLineBreaks } from "../utils/text";
 
 const questionsCol = collection(db, "questions");
 
@@ -51,15 +52,38 @@ export async function getQuestionsByIds(ids) {
   return ids.map((id) => byId[id]).filter(Boolean);
 }
 
+function cleanQuestionText(data) {
+  return {
+    ...data,
+    question: normalizeLineBreaks(data.question),
+    explanation: normalizeLineBreaks(data.explanation),
+    options: Array.isArray(data.options)
+      ? data.options.map((o) => normalizeLineBreaks(o))
+      : data.options,
+    optionRationales:
+      data.optionRationales && typeof data.optionRationales === "object"
+        ? Object.fromEntries(
+            Object.entries(data.optionRationales).map(([letter, text]) => [
+              letter,
+              normalizeLineBreaks(text),
+            ])
+          )
+        : data.optionRationales,
+  };
+}
+
 export async function createQuestion(data) {
+  const clean = cleanQuestionText(data);
   const ref = await addDoc(questionsCol, {
-    question: data.question ?? "",
-    type: data.type,
-    options: data.options ?? [],
-    correctAnswer: data.correctAnswer ?? "",
-    points: Number(data.points) || 1,
-    category: data.category ?? "General",
-    explanation: data.explanation ?? "",
+    question: clean.question ?? "",
+    keyword: clean.keyword ?? "",
+    type: clean.type,
+    options: clean.options ?? [],
+    correctAnswer: clean.correctAnswer ?? "",
+    points: Number(clean.points) || 1,
+    category: clean.category ?? "General",
+    explanation: clean.explanation ?? "",
+    optionRationales: clean.optionRationales ?? {},
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -68,7 +92,7 @@ export async function createQuestion(data) {
 
 export async function updateQuestion(id, data) {
   await updateDoc(doc(db, "questions", id), {
-    ...data,
+    ...cleanQuestionText(data),
     updatedAt: serverTimestamp(),
   });
 }
@@ -84,19 +108,40 @@ export async function duplicateQuestion(id) {
   return createQuestion({ ...rest, question: `${rest.question} (Copy)` });
 }
 
-/** Bulk import from validated CSV rows. Returns the created question ids. */
-export async function bulkCreateQuestions(questions) {
+/**
+ * Bulk import from validated CSV rows, upserting by docId.
+ * `items` is [{ docId, question }] — docId comes from the CSV's own `id`
+ * column when present, or a content-derived hash otherwise (see
+ * utils/grading.js validateCsvQuestionRow). Because we use setDoc(docId)
+ * instead of addDoc, importing the same row twice always lands on the
+ * same document — updating it in place — instead of creating a duplicate.
+ * `createdAt` is only set the first time a doc is written; re-imports only
+ * touch `updatedAt` so original creation history isn't lost.
+ */
+export async function bulkUpsertQuestions(items) {
+  const ids = items.map((i) => i.docId);
+  const existing = await getQuestionsByIds(ids);
+  const existingIds = new Set(existing.map((q) => q.id));
+
   const batch = writeBatch(db);
-  const ids = [];
-  for (const q of questions) {
-    const ref = doc(questionsCol);
-    ids.push(ref.id);
-    batch.set(ref, {
-      ...q,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+  const created = [];
+  const updated = [];
+
+  for (const { docId, question } of items) {
+    const ref = doc(questionsCol, docId);
+    const isUpdate = existingIds.has(docId);
+    batch.set(
+      ref,
+      {
+        ...cleanQuestionText(question),
+        updatedAt: serverTimestamp(),
+        ...(isUpdate ? {} : { createdAt: serverTimestamp() }),
+      },
+      { merge: true }
+    );
+    (isUpdate ? updated : created).push(docId);
   }
+
   await batch.commit();
-  return ids;
+  return { created, updated };
 }

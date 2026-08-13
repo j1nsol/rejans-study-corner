@@ -1,3 +1,5 @@
+import { sanitizeDocId, stableHash } from "./id";
+
 export const QUESTION_TYPES = {
   MULTIPLE_CHOICE: "multiple_choice",
   TRUE_FALSE: "true_false",
@@ -14,6 +16,7 @@ export function validateCsvQuestionRow(row, index) {
   const errors = [];
   const type = (row.type || "").trim().toLowerCase();
   const question = (row.question || "").trim();
+  const keyword = (row.keyword || "").trim();
   const points = Number(row.points || 1);
   const category = (row.category || "").trim() || "General";
   const explanation = (row.explanation || "").trim();
@@ -32,24 +35,37 @@ export function validateCsvQuestionRow(row, index) {
 
   let options = [];
   let correctAnswer = correctRaw;
+  let optionRationales = {};
 
   if (type === QUESTION_TYPES.MULTIPLE_CHOICE) {
     const letters = ["A", "B", "C", "D"];
-    const raw = [row.option_a, row.option_b, row.option_c, row.option_d];
-    options = raw
-      .map((v, i) => ({ letter: letters[i], text: (v || "").trim() }))
-      .filter((o) => o.text !== "");
-    if (options.length < 2) {
+    const raw = letters.map((letter) => ({
+      letter,
+      text: (row[`option_${letter.toLowerCase()}`] || "").trim(),
+      rationale: (row[`rationale_${letter.toLowerCase()}`] || "").trim(),
+    }));
+    const nonEmpty = raw.filter((o) => o.text !== "");
+    if (nonEmpty.length < 2) {
       errors.push("Multiple choice needs at least 2 non-empty options.");
     }
-    const letter = correctRaw.toUpperCase();
-    if (!letters.slice(0, options.length).includes(letter)) {
+    // Re-letter positionally (A/B/C/... for whichever options are actually
+    // filled in) so the letter shown to the student always matches the
+    // letter used for grading and for looking up its rationale — even if
+    // e.g. option_b was left blank and option_c wasn't.
+    const originalCorrectLetter = correctRaw.toUpperCase();
+    const correctIndex = nonEmpty.findIndex((o) => o.letter === originalCorrectLetter);
+    if (correctIndex === -1) {
       errors.push(
         `correct_answer must be one of the option letters you filled in (A-D).`
       );
     }
-    correctAnswer = letter;
-    options = options.map((o) => o.text);
+    options = nonEmpty.map((o) => o.text);
+    correctAnswer = correctIndex >= 0 ? letters[correctIndex] : originalCorrectLetter;
+    optionRationales = Object.fromEntries(
+      nonEmpty
+        .map((o, i) => [letters[i], o.rationale])
+        .filter(([, text]) => text !== "")
+    );
   } else if (type === QUESTION_TYPES.TRUE_FALSE) {
     options = ["True", "False"];
     const letter = correctRaw.toUpperCase();
@@ -67,16 +83,29 @@ export function validateCsvQuestionRow(row, index) {
     rowNumber: index + 2, // +2: header row + 1-indexing
     valid: errors.length === 0,
     errors,
+    // If the CSV gave an explicit id, use it (so re-imports always match
+    // the same row). Otherwise derive a stable id from the question's
+    // content, so importing the exact same file twice upserts instead of
+    // duplicating — but note editing the question text afterward will
+    // change this derived id, so an explicit id column is more durable.
+    docId: errors.length
+      ? null
+      : (() => {
+          const sanitized = sanitizeDocId(row.id || "");
+          return sanitized || `q-${stableHash(`${type}|${question.toLowerCase()}`)}`;
+        })(),
     question: errors.length
       ? null
       : {
           question,
+          keyword,
           type,
           options,
           correctAnswer,
           points,
           category,
           explanation,
+          optionRationales,
         },
   };
 }

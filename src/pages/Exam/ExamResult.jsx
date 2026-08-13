@@ -6,6 +6,7 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Spinner from "../../components/ui/Spinner";
 import StudyBuddy from "../../components/StudyBuddy/StudyBuddy";
+import AnswerRationale from "../../components/QuestionCard/AnswerRationale";
 
 export default function ExamResult() {
   const [searchParams] = useSearchParams();
@@ -101,7 +102,12 @@ export default function ExamResult() {
               <p className="mb-2 text-xs font-semibold text-stone-400">
                 Question {i + 1} {r.isCorrect ? "✅" : "❌"}
               </p>
-              <p className="mb-2 font-semibold text-stone-700">{r.question}</p>
+              {r.keyword && (
+                <p className="mb-1 font-display text-xs font-semibold uppercase tracking-wide text-lavender-400">
+                  🔑 {r.keyword}
+                </p>
+              )}
+              <p className="mb-2 whitespace-pre-line font-semibold text-stone-700">{r.question}</p>
               <p className="text-sm text-stone-500">
                 Your answer: <span className="font-medium">{String(r.studentAnswer)}</span>
               </p>
@@ -110,11 +116,13 @@ export default function ExamResult() {
                   Correct answer: <span className="font-medium">{String(r.correctAnswer)}</span>
                 </p>
               )}
-              {r.explanation && (
-                <p className="mt-2 rounded-xl bg-skycream-100 p-2 text-xs text-stone-500">
-                  💡 {r.explanation}
-                </p>
-              )}
+              <AnswerRationale
+                type={r.type}
+                options={r.options}
+                correctAnswer={r.correctAnswer}
+                explanation={r.explanation}
+                optionRationales={r.optionRationales}
+              />
             </Card>
           ))}
         </div>

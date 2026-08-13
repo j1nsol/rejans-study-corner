@@ -4,7 +4,7 @@ export default function QuestionCard({ question, index, total, value, onChange }
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-lavender-400">
         Question {index + 1} of {total}
       </p>
-      <h2 className="mb-5 font-body text-lg font-bold leading-relaxed text-stone-700">
+      <h2 className="mb-5 whitespace-pre-line font-body text-lg font-bold leading-relaxed text-stone-700">
         {question.question}
       </h2>
 

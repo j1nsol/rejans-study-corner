@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { getAttemptDetail } from "../../services/resultService";
 import Card from "../../components/ui/Card";
 import Spinner from "../../components/ui/Spinner";
+import AnswerRationale from "../../components/QuestionCard/AnswerRationale";
 
 export default function AdminResultDetail() {
   const { id } = useParams();
@@ -37,13 +38,25 @@ export default function AdminResultDetail() {
             <p className="mb-1 text-xs font-semibold text-stone-400">
               Question {i + 1} {r.isCorrect ? "✅ Correct" : "❌ Incorrect"} · {r.pointsEarned}/{r.points} pts
             </p>
-            <p className="mb-2 font-semibold text-stone-700">{r.question}</p>
+            {r.keyword && (
+              <p className="mb-1 font-display text-xs font-semibold uppercase tracking-wide text-lavender-400">
+                🔑 {r.keyword}
+              </p>
+            )}
+            <p className="mb-2 whitespace-pre-line font-semibold text-stone-700">{r.question}</p>
             <p className="text-sm text-stone-500">
               {attempt.username}'s answer: <span className="font-medium">{String(r.studentAnswer)}</span>
             </p>
             <p className="text-sm text-stone-500">
               Correct answer: <span className="font-medium">{String(r.correctAnswer)}</span>
             </p>
+            <AnswerRationale
+              type={r.type}
+              options={r.options}
+              correctAnswer={r.correctAnswer}
+              explanation={r.explanation}
+              optionRationales={r.optionRationales}
+            />
           </Card>
         ))}
       </div>

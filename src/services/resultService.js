@@ -21,13 +21,16 @@ export async function getAttemptDetail(attemptId) {
         String(q.correctAnswer).trim().toLowerCase();
     return {
       question: q.question,
+      keyword: q.keyword,
       type: q.type,
+      options: q.options,
       studentAnswer: studentAnswer ?? "(no answer)",
       correctAnswer: q.correctAnswer,
       isCorrect,
       points: q.points,
       pointsEarned: isCorrect ? q.points : 0,
       explanation: q.explanation,
+      optionRationales: q.optionRationales ?? {},
     };
   });
 

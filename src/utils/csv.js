@@ -86,7 +86,9 @@ export function downloadCsv(filename, csvText) {
 }
 
 export const QUESTION_CSV_HEADERS = [
+  "id",
   "question",
+  "keyword",
   "type",
   "option_a",
   "option_b",
@@ -96,11 +98,16 @@ export const QUESTION_CSV_HEADERS = [
   "points",
   "category",
   "explanation",
+  "rationale_a",
+  "rationale_b",
+  "rationale_c",
+  "rationale_d",
 ];
 
 export const QUESTION_CSV_TEMPLATE = [
   QUESTION_CSV_HEADERS.join(","),
-  "What is 2 + 2?,multiple_choice,3,4,5,6,B,1,Math,2 + 2 equals 4.",
-  "The Earth revolves around the Sun.,true_false,True,False,,,A,1,Science,",
-  "What is the chemical symbol for water?,short_answer,,,,,H2O,1,Chemistry,",
+  'Q001,What is 2 + 2?,Basic addition,multiple_choice,3,4,5,6,B,1,Math,2 + 2 equals 4.,,,,',
+  'Q002,The Earth revolves around the Sun.,Heliocentrism,true_false,True,False,,,A,1,Science,,,,,',
+  'Q003,What is the chemical symbol for water?,Chemical formulas,short_answer,,,,,H2O,1,Chemistry,,,,,',
+  'Q004,Which are examples of X?,Behaviorism-based inclusive practices,multiple_choice,"I, II and III","I and II","II and III","I and II (again)",A,1,Teaching,"I II and III are all examples of X.","B omits III, which is also valid.","C omits I, the core requirement.","D repeats I and II and omits III."',
 ].join("\n");

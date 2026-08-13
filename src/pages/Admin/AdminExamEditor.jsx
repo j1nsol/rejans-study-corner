@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getExam, createExam, updateExam } from "../../services/examService";
 import { listQuestions } from "../../services/questionService";
@@ -45,6 +45,8 @@ export default function AdminExamEditor() {
   const [form, setForm] = useState(emptyExam);
   const [allQuestions, setAllQuestions] = useState(null);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [collapsed, setCollapsed] = useState(() => new Set());
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -72,6 +74,26 @@ export default function AdminExamEditor() {
           ? f.questionIds.filter((x) => x !== qid)
           : [...f.questionIds, qid],
       };
+    });
+  }
+
+  function setQuestionsSelected(qids, selected) {
+    setForm((f) => {
+      const set = new Set(f.questionIds);
+      qids.forEach((qid) => (selected ? set.add(qid) : set.delete(qid)));
+      // Preserve existing order, then append any newly-added ids.
+      const kept = f.questionIds.filter((id) => set.has(id));
+      const added = qids.filter((qid) => selected && !f.questionIds.includes(qid));
+      return { ...f, questionIds: [...kept, ...added] };
+    });
+  }
+
+  function toggleCategoryCollapsed(category) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
     });
   }
 
@@ -109,10 +131,21 @@ export default function AdminExamEditor() {
 
   if (allQuestions === null) return <Spinner />;
 
-  const filtered = allQuestions.filter((q) =>
-    q.question.toLowerCase().includes(search.toLowerCase())
-  );
+  const categories = [...new Set(allQuestions.map((q) => q.category))].sort();
+
+  const filtered = allQuestions.filter((q) => {
+    const matchesSearch = q.question.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = categoryFilter === "all" || q.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  const grouped = filtered.reduce((acc, q) => {
+    (acc[q.category] ??= []).push(q);
+    return acc;
+  }, {});
   const questionsById = Object.fromEntries(allQuestions.map((q) => [q.id, q]));
+  const filteredIds = filtered.map((q) => q.id);
+  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((qid) => form.questionIds.includes(qid));
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -186,19 +219,30 @@ export default function AdminExamEditor() {
       </Card>
 
       <Card>
-        <h2 className="mb-3 font-display text-lg text-stone-700">
-          Questions ({form.questionIds.length})
-        </h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-display text-lg text-stone-700">
+            Questions ({form.questionIds.length})
+          </h2>
+          {form.questionIds.length > 0 && (
+            <button
+              type="button"
+              className="focus-cute text-xs text-rose-400 underline hover:text-rose-500"
+              onClick={() => setForm((f) => ({ ...f, questionIds: [] }))}
+            >
+              Clear all
+            </button>
+          )}
+        </div>
 
         {form.questionIds.length > 0 && (
-          <ol className="mb-4 space-y-1">
+          <ol className="mb-4 max-h-48 space-y-1 overflow-y-auto rounded-2xl bg-blossom-50/60 p-2 pr-1">
             {form.questionIds.map((qid, i) => {
               const q = questionsById[qid];
               if (!q) return null;
               return (
                 <li
                   key={qid}
-                  className="flex items-center justify-between gap-2 rounded-xl bg-blossom-50 px-3 py-1.5 text-sm"
+                  className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-1.5 text-sm shadow-sm"
                 >
                   <span className="truncate text-stone-600">
                     {i + 1}. {q.question}
@@ -214,32 +258,90 @@ export default function AdminExamEditor() {
           </ol>
         )}
 
-        <Input
-          placeholder="Search question bank..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="mb-3"
-        />
+        <div className="mb-3 grid grid-cols-2 gap-2">
+          <Input
+            placeholder="Search question bank..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            className="focus-cute rounded-2xl border border-stone-200 px-3 py-2.5 text-sm"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option value="all">All categories</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
 
-        <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
-          {filtered.map((q) => {
-            const checked = form.questionIds.includes(q.id);
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
+          <button
+            type="button"
+            className="focus-cute font-semibold text-blossom-500 underline hover:text-blossom-600"
+            onClick={() => setQuestionsSelected(filteredIds, !allFilteredSelected)}
+          >
+            {allFilteredSelected ? "Deselect" : "Select"} all {filteredIds.length} shown
+          </button>
+          <span className="text-stone-300">·</span>
+          <span className="text-stone-400">
+            Tip: narrow with search or a category first, then select-all.
+          </span>
+        </div>
+
+        <div className="max-h-96 space-y-3 overflow-y-auto pr-1">
+          {Object.keys(grouped).sort().map((category) => {
+            const categoryQuestions = grouped[category];
+            const categoryIds = categoryQuestions.map((q) => q.id);
+            const selectedCount = categoryIds.filter((qid) => form.questionIds.includes(qid)).length;
+            const allSelected = selectedCount === categoryIds.length;
+            const someSelected = selectedCount > 0 && !allSelected;
+            const isCollapsed = collapsed.has(category);
+
             return (
-              <label
-                key={q.id}
-                className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 text-sm hover:bg-stone-50"
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-blossom-500"
-                  checked={checked}
-                  onChange={() => toggleQuestion(q.id)}
-                />
-                <span className="truncate text-stone-600">{q.question}</span>
-                <span className="ml-auto shrink-0 rounded-full bg-lavender-100 px-2 py-0.5 text-[10px] text-lavender-500">
-                  {q.category}
-                </span>
-              </label>
+              <div key={category} className="rounded-2xl border border-stone-100">
+                <div className="flex items-center gap-2 rounded-t-2xl bg-lavender-50 px-3 py-2">
+                  <TriStateCheckbox
+                    checked={allSelected}
+                    indeterminate={someSelected}
+                    onChange={() => setQuestionsSelected(categoryIds, !allSelected)}
+                  />
+                  <button
+                    type="button"
+                    className="focus-cute flex flex-1 items-center justify-between text-left"
+                    onClick={() => toggleCategoryCollapsed(category)}
+                  >
+                    <span className="text-sm font-semibold text-lavender-600">
+                      {category}
+                    </span>
+                    <span className="text-xs text-stone-400">
+                      {selectedCount}/{categoryIds.length} selected {isCollapsed ? "▸" : "▾"}
+                    </span>
+                  </button>
+                </div>
+                {!isCollapsed && (
+                  <div className="space-y-1 p-2">
+                    {categoryQuestions.map((q) => {
+                      const checked = form.questionIds.includes(q.id);
+                      return (
+                        <label
+                          key={q.id}
+                          className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 text-sm hover:bg-stone-50"
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 shrink-0 accent-blossom-500"
+                            checked={checked}
+                            onChange={() => toggleQuestion(q.id)}
+                          />
+                          <span className="truncate text-stone-600">{q.question}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
           {filtered.length === 0 && (
