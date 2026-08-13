@@ -19,12 +19,29 @@ function mapDoc(d) {
   return { id: d.id, ...d.data() };
 }
 
-export async function listExams({ publishedOnly = false } = {}) {
+/**
+ * In-memory cache for the two shapes listExams is called with — "all"
+ * (Admin Exams / Admin Results) and "published only" (Home). Without
+ * this, every tab switch back to Admin Exams re-reads the whole exams
+ * collection even though exams change rarely. Invalidated by any write
+ * below (create/update/delete/duplicate/publish toggle).
+ */
+let examsCache = { all: null, published: null };
+
+function invalidateExamsCache() {
+  examsCache = { all: null, published: null };
+}
+
+export async function listExams({ publishedOnly = false, force = false } = {}) {
+  const cacheKey = publishedOnly ? "published" : "all";
+  if (!force && examsCache[cacheKey]) return examsCache[cacheKey];
   const constraints = publishedOnly
     ? [where("published", "==", true), orderBy("createdAt", "desc")]
     : [orderBy("createdAt", "desc")];
   const snap = await getDocs(query(examsCol, ...constraints));
-  return snap.docs.map(mapDoc);
+  const list = snap.docs.map(mapDoc);
+  examsCache[cacheKey] = list;
+  return list;
 }
 
 export async function getExam(examId) {
@@ -46,6 +63,7 @@ export async function createExam(data) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  invalidateExamsCache();
   return ref.id;
 }
 
@@ -54,10 +72,12 @@ export async function updateExam(examId, data) {
     ...data,
     updatedAt: serverTimestamp(),
   });
+  invalidateExamsCache();
 }
 
 export async function deleteExam(examId) {
   await deleteDoc(doc(db, "exams", examId));
+  invalidateExamsCache();
 }
 
 export async function duplicateExam(examId) {

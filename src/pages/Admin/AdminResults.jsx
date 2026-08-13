@@ -49,7 +49,7 @@ export default function AdminResults() {
   async function handleDelete(a) {
     if (!confirm(`Delete ${a.username}'s attempt?`)) return;
     await deleteAttempt(a.id);
-    await refresh();
+    setAttempts((prev) => (prev ?? []).filter((x) => x.id !== a.id));
     setToast("Deleted 🗑️");
   }
 

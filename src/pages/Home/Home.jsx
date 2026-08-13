@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listExams, getExam } from "../../services/examService";
 import { getStudyBuddySettings } from "../../services/studyBuddyService";
-import { listAllAttempts } from "../../services/attemptService";
+import { listAttemptsForUser } from "../../services/attemptService";
 import ExamCard from "../../components/ExamCard/ExamCard";
 import StudyBuddy from "../../components/StudyBuddy/StudyBuddy";
 import Spinner from "../../components/ui/Spinner";
@@ -46,8 +46,7 @@ export default function Home() {
 
       if (username) {
         try {
-          const allAttempts = await listAllAttempts();
-          const mine = allAttempts.filter((a) => a.username === username);
+          const mine = await listAttemptsForUser(username);
 
           const attempts = mine.filter((a) => a.status === "submitted");
           const completed = attempts.length;
@@ -58,7 +57,7 @@ export default function Home() {
             : 0;
           setProgress({ completed, avg, recent: attempts.slice(0, 3) });
 
-          // mine is already ordered by startedAt desc (from listAllAttempts),
+          // mine is already ordered by startedAt desc (from listAttemptsForUser),
           // so the first in-progress attempt found is the most recent one.
           const inProgress = mine.find((a) => a.status === "in_progress");
           if (inProgress) {

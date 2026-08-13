@@ -21,9 +21,30 @@ function mapDoc(d) {
   return { id: d.id, ...d.data() };
 }
 
-export async function listQuestions() {
+/**
+ * In-memory cache for the full question bank. Admin Questions is one of
+ * the more expensive reads in the app (a full-collection getDocs), and
+ * without this it re-fetches all 700+ questions on every single visit
+ * to that tab — even if nothing changed. The cache lives for the page
+ * session and is invalidated by any write below (create/update/delete/
+ * duplicate/bulk delete/import), so switching tabs back and forth is
+ * free, but the list is always fresh right after an actual edit.
+ */
+let questionsCache = null;
+
+function invalidateQuestionsCache() {
+  questionsCache = null;
+}
+
+/**
+ * Pass { force: true } to bypass the cache and hit Firestore directly
+ * (e.g. a manual "refresh" affordance, if one is ever added).
+ */
+export async function listQuestions({ force = false } = {}) {
+  if (!force && questionsCache) return questionsCache;
   const snap = await getDocs(questionsCol);
-  return snap.docs.map(mapDoc);
+  questionsCache = snap.docs.map(mapDoc);
+  return questionsCache;
 }
 
 export async function getQuestion(id) {
@@ -87,6 +108,7 @@ export async function createQuestion(data) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  invalidateQuestionsCache();
   return ref.id;
 }
 
@@ -95,10 +117,12 @@ export async function updateQuestion(id, data) {
     ...cleanQuestionText(data),
     updatedAt: serverTimestamp(),
   });
+  invalidateQuestionsCache();
 }
 
 export async function deleteQuestion(id) {
   await deleteDoc(doc(db, "questions", id));
+  invalidateQuestionsCache();
 }
 
 /** Deletes many questions in one batched write — used by the question
@@ -112,6 +136,7 @@ export async function bulkDeleteQuestions(ids) {
     chunk.forEach((id) => batch.delete(doc(db, "questions", id)));
     await batch.commit();
   }
+  invalidateQuestionsCache();
 }
 
 export async function duplicateQuestion(id) {
@@ -156,5 +181,6 @@ export async function bulkUpsertQuestions(items) {
   }
 
   await batch.commit();
+  invalidateQuestionsCache();
   return { created, updated };
 }

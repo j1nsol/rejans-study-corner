@@ -64,13 +64,20 @@ export default function ExamResult() {
           {attempt.score} / {attempt.totalPoints}
         </p>
 
-        <p
-          className={`mt-3 inline-block rounded-full px-4 py-1 text-sm font-semibold ${
-            passed ? "bg-mint-300 text-emerald-800" : "bg-peach-100 text-peach-600"
-          }`}
-        >
-          {passed ? "🏆 PASSED" : "Not quite yet"}
-        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          <p
+            className={`inline-block rounded-full px-4 py-1 text-sm font-semibold ${
+              passed ? "bg-mint-300 text-emerald-800" : "bg-peach-100 text-peach-600"
+            }`}
+          >
+            {passed ? "🏆 PASSED" : "Not quite yet"}
+          </p>
+          {attempt.mode === "flash" && (
+            <p className="inline-block rounded-full bg-lavender-100 px-4 py-1 text-sm font-semibold text-lavender-600">
+              ⚡ Flash Quiz
+            </p>
+          )}
+        </div>
 
         {passed ? (
           <p className="mt-4 text-stone-500">

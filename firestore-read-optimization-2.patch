@@ -1,0 +1,156 @@
+diff --git a/firestore.indexes.json b/firestore.indexes.json
+index 2074e10..ce2050d 100644
+--- a/firestore.indexes.json
++++ b/firestore.indexes.json
+@@ -15,6 +15,14 @@
+         { "fieldPath": "examId", "order": "ASCENDING" },
+         { "fieldPath": "startedAt", "order": "DESCENDING" }
+       ]
++    },
++    {
++      "collectionGroup": "attempts",
++      "queryScope": "COLLECTION",
++      "fields": [
++        { "fieldPath": "username", "order": "ASCENDING" },
++        { "fieldPath": "startedAt", "order": "DESCENDING" }
++      ]
+     }
+   ],
+   "fieldOverrides": []
+diff --git a/src/pages/Admin/AdminResults.jsx b/src/pages/Admin/AdminResults.jsx
+index b7013b0..de059bc 100644
+--- a/src/pages/Admin/AdminResults.jsx
++++ b/src/pages/Admin/AdminResults.jsx
+@@ -49,7 +49,7 @@ export default function AdminResults() {
+   async function handleDelete(a) {
+     if (!confirm(`Delete ${a.username}'s attempt?`)) return;
+     await deleteAttempt(a.id);
+-    await refresh();
++    setAttempts((prev) => (prev ?? []).filter((x) => x.id !== a.id));
+     setToast("Deleted 🗑️");
+   }
+ 
+diff --git a/src/pages/Home/Home.jsx b/src/pages/Home/Home.jsx
+index 27c0840..17e3d46 100644
+--- a/src/pages/Home/Home.jsx
++++ b/src/pages/Home/Home.jsx
+@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
+ import { Link } from "react-router-dom";
+ import { listExams, getExam } from "../../services/examService";
+ import { getStudyBuddySettings } from "../../services/studyBuddyService";
+-import { listAllAttempts } from "../../services/attemptService";
++import { listAttemptsForUser } from "../../services/attemptService";
+ import ExamCard from "../../components/ExamCard/ExamCard";
+ import StudyBuddy from "../../components/StudyBuddy/StudyBuddy";
+ import Spinner from "../../components/ui/Spinner";
+@@ -46,8 +46,7 @@ export default function Home() {
+ 
+       if (username) {
+         try {
+-          const allAttempts = await listAllAttempts();
+-          const mine = allAttempts.filter((a) => a.username === username);
++          const mine = await listAttemptsForUser(username);
+ 
+           const attempts = mine.filter((a) => a.status === "submitted");
+           const completed = attempts.length;
+@@ -58,7 +57,7 @@ export default function Home() {
+             : 0;
+           setProgress({ completed, avg, recent: attempts.slice(0, 3) });
+ 
+-          // mine is already ordered by startedAt desc (from listAllAttempts),
++          // mine is already ordered by startedAt desc (from listAttemptsForUser),
+           // so the first in-progress attempt found is the most recent one.
+           const inProgress = mine.find((a) => a.status === "in_progress");
+           if (inProgress) {
+diff --git a/src/services/attemptService.js b/src/services/attemptService.js
+index 5539352..38f9a6c 100644
+--- a/src/services/attemptService.js
++++ b/src/services/attemptService.js
+@@ -168,6 +168,13 @@ export async function listAttemptsForExam(examId) {
+   return snap.docs.map(mapDoc);
+ }
+ 
++export async function listAttemptsForUser(username) {
++  const snap = await getDocs(
++    query(attemptsCol, where("username", "==", username), orderBy("startedAt", "desc"))
++  );
++  return snap.docs.map(mapDoc);
++}
++
+ export async function listAllAttempts() {
+   const snap = await getDocs(query(attemptsCol, orderBy("startedAt", "desc")));
+   return snap.docs.map(mapDoc);
+diff --git a/src/services/questionService.js b/src/services/questionService.js
+index b68e4ab..242b182 100644
+--- a/src/services/questionService.js
++++ b/src/services/questionService.js
+@@ -21,9 +21,30 @@ function mapDoc(d) {
+   return { id: d.id, ...d.data() };
+ }
+ 
+-export async function listQuestions() {
++/**
++ * In-memory cache for the full question bank. Admin Questions is one of
++ * the more expensive reads in the app (a full-collection getDocs), and
++ * without this it re-fetches all 700+ questions on every single visit
++ * to that tab — even if nothing changed. The cache lives for the page
++ * session and is invalidated by any write below (create/update/delete/
++ * duplicate/bulk delete/import), so switching tabs back and forth is
++ * free, but the list is always fresh right after an actual edit.
++ */
++let questionsCache = null;
++
++function invalidateQuestionsCache() {
++  questionsCache = null;
++}
++
++/**
++ * Pass { force: true } to bypass the cache and hit Firestore directly
++ * (e.g. a manual "refresh" affordance, if one is ever added).
++ */
++export async function listQuestions({ force = false } = {}) {
++  if (!force && questionsCache) return questionsCache;
+   const snap = await getDocs(questionsCol);
+-  return snap.docs.map(mapDoc);
++  questionsCache = snap.docs.map(mapDoc);
++  return questionsCache;
+ }
+ 
+ export async function getQuestion(id) {
+@@ -87,6 +108,7 @@ export async function createQuestion(data) {
+     createdAt: serverTimestamp(),
+     updatedAt: serverTimestamp(),
+   });
++  invalidateQuestionsCache();
+   return ref.id;
+ }
+ 
+@@ -95,10 +117,12 @@ export async function updateQuestion(id, data) {
+     ...cleanQuestionText(data),
+     updatedAt: serverTimestamp(),
+   });
++  invalidateQuestionsCache();
+ }
+ 
+ export async function deleteQuestion(id) {
+   await deleteDoc(doc(db, "questions", id));
++  invalidateQuestionsCache();
+ }
+ 
+ /** Deletes many questions in one batched write — used by the question
+@@ -112,6 +136,7 @@ export async function bulkDeleteQuestions(ids) {
+     chunk.forEach((id) => batch.delete(doc(db, "questions", id)));
+     await batch.commit();
+   }
++  invalidateQuestionsCache();
+ }
+ 
+ export async function duplicateQuestion(id) {
+@@ -156,5 +181,6 @@ export async function bulkUpsertQuestions(items) {
+   }
+ 
+   await batch.commit();
++  invalidateQuestionsCache();
+   return { created, updated };
+ }
+\ No newline at end of file

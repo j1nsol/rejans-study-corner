@@ -1,4 +1,4 @@
-export default function Timer({ label, isLow }) {
+export default function Timer({ label, isLow, icon = "⏰" }) {
   return (
     <div
       role="timer"
@@ -9,7 +9,7 @@ export default function Timer({ label, isLow }) {
           : "bg-lavender-100 text-lavender-600"
       }`}
     >
-      ⏰ {label}
+      {icon} {label}
     </div>
   );
 }

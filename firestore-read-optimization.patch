@@ -1,0 +1,82 @@
+diff --git a/firestore.indexes.json b/firestore.indexes.json
+index 2074e10..ce2050d 100644
+--- a/firestore.indexes.json
++++ b/firestore.indexes.json
+@@ -15,6 +15,14 @@
+         { "fieldPath": "examId", "order": "ASCENDING" },
+         { "fieldPath": "startedAt", "order": "DESCENDING" }
+       ]
++    },
++    {
++      "collectionGroup": "attempts",
++      "queryScope": "COLLECTION",
++      "fields": [
++        { "fieldPath": "username", "order": "ASCENDING" },
++        { "fieldPath": "startedAt", "order": "DESCENDING" }
++      ]
+     }
+   ],
+   "fieldOverrides": []
+diff --git a/src/pages/Admin/AdminResults.jsx b/src/pages/Admin/AdminResults.jsx
+index b7013b0..de059bc 100644
+--- a/src/pages/Admin/AdminResults.jsx
++++ b/src/pages/Admin/AdminResults.jsx
+@@ -49,7 +49,7 @@ export default function AdminResults() {
+   async function handleDelete(a) {
+     if (!confirm(`Delete ${a.username}'s attempt?`)) return;
+     await deleteAttempt(a.id);
+-    await refresh();
++    setAttempts((prev) => (prev ?? []).filter((x) => x.id !== a.id));
+     setToast("Deleted 🗑️");
+   }
+ 
+diff --git a/src/pages/Home/Home.jsx b/src/pages/Home/Home.jsx
+index 27c0840..17e3d46 100644
+--- a/src/pages/Home/Home.jsx
++++ b/src/pages/Home/Home.jsx
+@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
+ import { Link } from "react-router-dom";
+ import { listExams, getExam } from "../../services/examService";
+ import { getStudyBuddySettings } from "../../services/studyBuddyService";
+-import { listAllAttempts } from "../../services/attemptService";
++import { listAttemptsForUser } from "../../services/attemptService";
+ import ExamCard from "../../components/ExamCard/ExamCard";
+ import StudyBuddy from "../../components/StudyBuddy/StudyBuddy";
+ import Spinner from "../../components/ui/Spinner";
+@@ -46,8 +46,7 @@ export default function Home() {
+ 
+       if (username) {
+         try {
+-          const allAttempts = await listAllAttempts();
+-          const mine = allAttempts.filter((a) => a.username === username);
++          const mine = await listAttemptsForUser(username);
+ 
+           const attempts = mine.filter((a) => a.status === "submitted");
+           const completed = attempts.length;
+@@ -58,7 +57,7 @@ export default function Home() {
+             : 0;
+           setProgress({ completed, avg, recent: attempts.slice(0, 3) });
+ 
+-          // mine is already ordered by startedAt desc (from listAllAttempts),
++          // mine is already ordered by startedAt desc (from listAttemptsForUser),
+           // so the first in-progress attempt found is the most recent one.
+           const inProgress = mine.find((a) => a.status === "in_progress");
+           if (inProgress) {
+diff --git a/src/services/attemptService.js b/src/services/attemptService.js
+index 5539352..38f9a6c 100644
+--- a/src/services/attemptService.js
++++ b/src/services/attemptService.js
+@@ -168,6 +168,13 @@ export async function listAttemptsForExam(examId) {
+   return snap.docs.map(mapDoc);
+ }
+ 
++export async function listAttemptsForUser(username) {
++  const snap = await getDocs(
++    query(attemptsCol, where("username", "==", username), orderBy("startedAt", "desc"))
++  );
++  return snap.docs.map(mapDoc);
++}
++
+ export async function listAllAttempts() {
+   const snap = await getDocs(query(attemptsCol, orderBy("startedAt", "desc")));
+   return snap.docs.map(mapDoc);

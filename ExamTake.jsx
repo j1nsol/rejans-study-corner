@@ -8,7 +8,6 @@ import {
   saveAnswer,
   setAnswerFlag,
   submitAttempt,
-  advanceFlashQuestion,
 } from "../../services/attemptService";
 import { useCountdown } from "../../hooks/useCountdown";
 import QuestionCard from "../../components/QuestionCard/QuestionCard";
@@ -30,15 +29,11 @@ export default function ExamTake() {
   const [answers, setAnswers] = useState({});
   const [flagged, setFlagged] = useState(new Set());
   const [index, setIndex] = useState(0);
-  const [questionStartedAtMs, setQuestionStartedAtMs] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState("");
   const submittedRef = useRef(false);
   const pendingAnswerRef = useRef(null);
-  const advancingRef = useRef(false);
-  const lastAdvancedIndexRef = useRef(-1);
-  const isFlash = attempt?.mode === "flash";
 
   /**
    * Answers now save to Firestore when the student leaves a question
@@ -49,9 +44,6 @@ export default function ExamTake() {
    * case where they navigate away without using any of those controls
    * (e.g. closing the tab) — same best-effort semantics as before, it
    * just runs on unmount instead of on every keystroke.
-   *
-   * Applies to Flash Quiz Mode too: goToNextFlashQuestion() flushes
-   * before it advances, same as goToIndex() does for normal mode.
    */
   useEffect(() => {
     return () => {
@@ -93,16 +85,6 @@ export default function ExamTake() {
         setAttempt(a);
         setAnswers(values);
         setFlagged(flaggedIds);
-        if (a.mode === "flash") {
-          const clampedIndex = Math.min(a.currentIndex ?? 0, Math.max(qs.length - 1, 0));
-          setIndex(clampedIndex);
-          const startedMs = a.questionStartedAt?.toMillis
-            ? a.questionStartedAt.toMillis()
-            : a.questionStartedAt?.seconds
-            ? a.questionStartedAt.seconds * 1000
-            : Date.now();
-          setQuestionStartedAtMs(startedMs);
-        }
       } catch (err) {
         setLoadError("Oops! Something went wrong loading your exam. 🥺");
       }
@@ -126,69 +108,6 @@ export default function ExamTake() {
 
   const countdown = useCountdown(expiresAtMs ?? Date.now() + 999999, handleExpire);
 
-  // Flash Quiz Mode: a second, independent countdown for the *current*
-  // question only, anchored to questionStartedAtMs (which itself comes
-  // from Firestore — see startAttempt/advanceFlashQuestion). When it hits
-  // zero we move on automatically, answered or not, and there's no way
-  // back to this question afterwards.
-  const flashExpiresAtMs =
-    isFlash && questionStartedAtMs != null && attempt?.secondsPerQuestion
-      ? questionStartedAtMs + attempt.secondsPerQuestion * 1000
-      : null;
-
-  const handleFlashExpire = useCallback(() => {
-    if (submittedRef.current) return;
-    goToNextFlashQuestion(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attemptId, index, questions?.length]);
-
-  const flashCountdown = useCountdown(
-    flashExpiresAtMs ?? Date.now() + 999999,
-    handleFlashExpire
-  );
-
-  /**
-   * Advances past the current flash question — either because the
-   * student clicked "Next" (auto = false) or because their per-question
-   * timer ran out (auto = true, from handleFlashExpire). This always
-   * proceeds regardless of whether the current question has an answer
-   * saved; an unanswered question just comes through as unanswered when
-   * graded, same as it would in standard mode. If this was the last
-   * question, `auto` carries through to handleSubmit so a timeout-forced
-   * submission on the final question is correctly recorded as automatic
-   * rather than as if the student had clicked "Finish" themselves.
-   */
-  async function goToNextFlashQuestion(auto = false) {
-    if (submittedRef.current || advancingRef.current) return;
-    // Hard guard: this exact question has already been advanced past,
-    // no matter what triggered the call (manual click, the expiry timer,
-    // or both landing at once). Prevents any possibility of a retry loop
-    // hammering Firestore.
-    if (lastAdvancedIndexRef.current >= index) return;
-    advancingRef.current = true;
-    lastAdvancedIndexRef.current = index;
-    flushPendingAnswer();
-    const nextIndex = index + 1;
-    try {
-      if (nextIndex >= questions.length) {
-        await handleSubmit(auto);
-        return;
-      }
-      await advanceFlashQuestion(attemptId, nextIndex);
-      setIndex(nextIndex);
-      setQuestionStartedAtMs(Date.now());
-    } catch (err) {
-      // Best-effort: don't retry automatically (that's how this used to
-      // spiral into repeated requests). The per-question timer already
-      // moved on locally is fine to leave as-is; a manual "Next" click or
-      // a page refresh (which re-reads the attempt from Firestore) will
-      // recover from a transient failure.
-      setLoadError("Oops! We couldn't save your progress just now. Please refresh. 🥺");
-    } finally {
-      advancingRef.current = false;
-    }
-  }
-
   const answeredSet = useMemo(
     () => new Set(Object.keys(answers).map((qid) => questions?.findIndex((q) => q.id === qid)).filter((i) => i >= 0)),
     [answers, questions]
@@ -211,8 +130,8 @@ export default function ExamTake() {
 
   /** Writes whatever answer is pending (if any) and clears it. Safe to
    * call even when there's nothing pending. Used by navigation, Submit,
-   * Flash Mode advancement, and the unmount safety-net effect above —
-   * never called on every keystroke/click. */
+   * and the unmount safety-net effect above — never called on every
+   * keystroke/click. */
   function flushPendingAnswer() {
     const pending = pendingAnswerRef.current;
     if (!pending) return Promise.resolve();
@@ -223,8 +142,8 @@ export default function ExamTake() {
   }
 
   /** Use this instead of setIndex directly anywhere the student is
-   * leaving the current question in normal (non-flash) mode — flushes
-   * that question's answer first so it's never left un-persisted. */
+   * leaving the current question — flushes that question's answer
+   * first so it's never left un-persisted. */
   function goToIndex(nextIndex) {
     flushPendingAnswer();
     setIndex(nextIndex);
@@ -249,7 +168,7 @@ export default function ExamTake() {
     setSubmitting(true);
     try {
       await flushPendingAnswer();
-      await submitAttempt(attemptId, questions, { auto });
+      await submitAttempt(attemptId, questions);
       navigate(`/exams/${id}/result?attempt=${attemptId}`);
     } catch (err) {
       submittedRef.current = false;
@@ -291,24 +210,12 @@ export default function ExamTake() {
   const question = questions[index];
   const username = attempt.username;
 
-  const isLastQuestion = index === questions.length - 1;
-
   return (
     <div className="mx-auto max-w-2xl px-4 pb-24 pt-8">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-xl text-stone-700">🌸 {exam.title}</h1>
-        {isFlash ? (
-          <Timer label={flashCountdown.label} isLow={flashCountdown.isLow} icon="⚡" />
-        ) : (
-          <Timer label={countdown.label} isLow={countdown.isLow} />
-        )}
+        <Timer label={countdown.label} isLow={countdown.isLow} />
       </div>
-
-      {isFlash && (
-        <p className="mb-4 -mt-2 rounded-2xl bg-lavender-50 px-4 py-2 text-center text-xs font-semibold text-lavender-500">
-          ⚡ Flash Quiz Mode — {attempt.secondsPerQuestion}s per question, no going back!
-        </p>
-      )}
 
       <Card className="mb-6">
         <QuestionCard
@@ -317,61 +224,47 @@ export default function ExamTake() {
           total={questions.length}
           value={answers[question.id]}
           onChange={(val) => handleAnswerChange(question.id, val)}
-          flagged={!isFlash && flagged.has(question.id)}
-          onToggleFlag={isFlash ? undefined : () => handleToggleFlag(question.id)}
+          flagged={flagged.has(question.id)}
+          onToggleFlag={() => handleToggleFlag(question.id)}
         />
       </Card>
 
-      {isFlash ? (
-        <div className="mb-6 flex items-center justify-end">
-          {isLastQuestion ? (
-            <Button variant="mint" onClick={() => setConfirmOpen(true)} disabled={submitting}>
-              Finish ✨
-            </Button>
-          ) : (
-            <Button onClick={() => goToNextFlashQuestion()}>Next ⚡</Button>
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="mb-6 flex items-center justify-between">
-            <Button
-              variant="ghost"
-              onClick={() => goToIndex(Math.max(0, index - 1))}
-              disabled={index === 0}
-            >
-              ← Previous
-            </Button>
-            {index < questions.length - 1 ? (
-              <Button onClick={() => goToIndex(Math.min(questions.length - 1, index + 1))}>
-                Next →
-              </Button>
-            ) : (
-              <Button variant="mint" onClick={() => setConfirmOpen(true)}>
-                Submit ✨
-              </Button>
-            )}
-          </div>
+      <div className="mb-6 flex items-center justify-between">
+        <Button
+          variant="ghost"
+          onClick={() => goToIndex(Math.max(0, index - 1))}
+          disabled={index === 0}
+        >
+          ← Previous
+        </Button>
+        {index < questions.length - 1 ? (
+          <Button onClick={() => goToIndex(Math.min(questions.length - 1, index + 1))}>
+            Next →
+          </Button>
+        ) : (
+          <Button variant="mint" onClick={() => setConfirmOpen(true)}>
+            Submit ✨
+          </Button>
+        )}
+      </div>
 
-          <QuestionNavigation
-            total={questions.length}
-            currentIndex={index}
-            answeredSet={answeredSet}
-            flaggedSet={flaggedSet}
-            onJump={goToIndex}
-          />
+      <QuestionNavigation
+        total={questions.length}
+        currentIndex={index}
+        answeredSet={answeredSet}
+        flaggedSet={flaggedSet}
+        onJump={goToIndex}
+      />
 
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              className="focus-cute text-sm text-stone-400 underline"
-              onClick={() => setConfirmOpen(true)}
-            >
-              I'm Done! ✨
-            </button>
-          </div>
-        </>
-      )}
+      <div className="mt-6 text-center">
+        <button
+          type="button"
+          className="focus-cute text-sm text-stone-400 underline"
+          onClick={() => setConfirmOpen(true)}
+        >
+          I'm Done! ✨
+        </button>
+      </div>
 
       {confirmOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-stone-900/30 px-4">
@@ -382,7 +275,7 @@ export default function ExamTake() {
             <p className="mb-5 text-sm text-stone-500">
               You won't be able to change your answers after submitting.
             </p>
-            {!isFlash && flaggedSet.size > 0 && (
+            {flaggedSet.size > 0 && (
               <p className="mb-5 rounded-2xl bg-amber-50 px-4 py-2 text-sm text-amber-600">
                 🚩 You still have {flaggedSet.size} question{flaggedSet.size > 1 ? "s" : ""} flagged
                 for review.
@@ -392,7 +285,7 @@ export default function ExamTake() {
               <Button variant="ghost" onClick={() => setConfirmOpen(false)}>
                 Go Back
               </Button>
-              {!isFlash && flaggedSet.size > 0 && (
+              {flaggedSet.size > 0 && (
                 <Button
                   variant="secondary"
                   onClick={() => {

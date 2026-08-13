@@ -16,6 +16,8 @@ export default function ExamInstructions() {
     () => sessionStorage.getItem("rejan-username") || ""
   );
   const [starting, setStarting] = useState(false);
+  const [flashMode, setFlashMode] = useState(false);
+  const [secondsPerQuestion, setSecondsPerQuestion] = useState(30);
 
   useEffect(() => {
     let mounted = true;
@@ -48,6 +50,10 @@ export default function ExamInstructions() {
       setError("This exam doesn't have any questions yet — add some in Creator Mode first. 🌱");
       return;
     }
+    if (flashMode && (!Number(secondsPerQuestion) || Number(secondsPerQuestion) < 5)) {
+      setError("Give each question at least 5 seconds! ⚡");
+      return;
+    }
     setStarting(true);
     setError("");
     try {
@@ -58,6 +64,8 @@ export default function ExamInstructions() {
         durationMinutes: exam.durationMinutes,
         questionIds: exam.questionIds,
         shuffleQuestions: exam.shuffleQuestions,
+        mode: flashMode ? "flash" : "standard",
+        secondsPerQuestion: flashMode ? Number(secondsPerQuestion) : undefined,
       });
       navigate(`/exams/${exam.id}/take?attempt=${attemptId}`);
     } catch (e) {
@@ -103,6 +111,40 @@ export default function ExamInstructions() {
               <br />
               You've got this, {username}! 💗
             </p>
+
+            <div className="rounded-2xl border-2 border-dashed border-lavender-200 bg-lavender-50/60 p-4 text-left">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 accent-lavender-500"
+                  checked={flashMode}
+                  onChange={(e) => setFlashMode(e.target.checked)}
+                />
+                <span>
+                  <span className="font-display font-semibold text-stone-700">
+                    ⚡ Flash Quiz Mode
+                  </span>
+                  <span className="mt-0.5 block text-xs text-stone-500">
+                    Each question gets its own timer. When time's up you
+                    automatically move on — answered or not — and you can't go
+                    back once you've moved to the next question.
+                  </span>
+                </span>
+              </label>
+              {flashMode && (
+                <div className="mt-3">
+                  <Input
+                    label="Seconds per question"
+                    type="number"
+                    min={5}
+                    max={300}
+                    value={secondsPerQuestion}
+                    onChange={(e) => setSecondsPerQuestion(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
             {error && <p className="text-sm text-rose-500">{error}</p>}
             {(exam.questionIds?.length ?? 0) === 0 ? (
               <p className="text-sm text-rose-500">
